@@ -1,13 +1,11 @@
-// A working turkey-run-game-01 entry (Node 22, standard library only): the game is this directory's
-// game/ folder, plain static files a desktop browser loads offline (game/index.html and its ES
-// modules, no library and no network request), and the program hands it in. It copies game/ and
-// screenshots/ from beside this file to /output and writes /output/dossier.json, the summary the
-// judge reads, with the vendored make.fun library. A starting point, not a winner: Turkey Dodge, a
-// plain 2D canvas game where a turkey dodges the carving knives falling at it and catches corn, with a
-// title screen, score, lives and levels, game over and restart, flat colours and no sound. Build your
-// own turkey escape game (any genre: a runner, stealth, an arcade game; any library you vendor under
-// game/, or none), put your 3 or 4 PNG or JPEG screenshots
-// in screenshots/ (the first by name is the cover) and run it.
+// Gobble and Bolt! — the hand-in program for turkey-run-game-01 (Node 22, standard library only).
+// The game itself lives in this directory's game/ folder: plain static files a desktop browser
+// loads fully offline, an original side-scrolling escape in which a turkey sprints 1,200 metres
+// through a farmyard, a cornfield road and a kitchen while the farmer chases it from the left.
+// This program copies game/ and screenshots/ from beside this file to /output and writes
+// /output/dossier.json, the summary the judge reads, with the vendored make.fun library.
+// The four screenshots in screenshots/ are real renders of the game: the title cover, a
+// farmyard run with the farmer closing in, the kitchen at full chaos, and the forest ending.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
@@ -26,10 +24,10 @@ cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
 if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 
-// The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes; the others refuse an entry the
-// scorer would refuse (more than 4 screenshots or one over 256 KiB; more than 993 files in game/ or 48 MiB of game
-// files, in all, or a path under game/ over 1000 bytes: game/ counts beside /output's own 1000-entry cap, its
-// screenshots/ and dossier.json).
+// The dossier is built under the scorer's own caps: text_max_bytes shapes the bytes, and the
+// remaining limits refuse anything the scorer would refuse anyway — at most 4 screenshots of
+// 256 KiB each, at most 993 files and 48 MiB under game/, and no game path over 1000 bytes.
+// Gobble and Bolt! sits far inside all of them: nine small game files and four JPEG screenshots.
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {
