@@ -1,6 +1,6 @@
-// Simulation state, physics, farmer chase AI, 3-stage progression, obstacles, knives, ovens,
-// cover zones, collectibles, particles, and floating popups for Gobble and Bolt!
-import { FARMER, FIELD, GOAL_DISTANCE, LIVES, PIXELS_PER_METER, PLAYER, SCORING, STAGES } from './config.js';
+// Simulation state, physics, farmer chase AI, shotgun telegraphing, 3-stage progression,
+// obstacles, knives, ovens, cover zones, collectibles, and popups for Gobble and Bolt!
+import { FARMER, FIELD, GOAL_DISTANCE, LIVES, PIXELS_PER_METER, PLAYER, SCORING, SHOTGUN, STAGES } from './config.js';
 import { randomInt, randomPick, randomRange } from './random.js';
 
 export const OBS_FENCE = 'fence';
@@ -25,6 +25,10 @@ export const EVENT_OVEN_BLAST = 1 << 8;
 export const EVENT_STAGE_UP = 1 << 9;
 export const EVENT_CAUGHT = 1 << 10;
 export const EVENT_ESCAPED = 1 << 11;
+export const EVENT_HEART = 1 << 12;
+export const EVENT_RECHARGE = 1 << 13;
+export const EVENT_SHOTGUN_AIM = 1 << 14;
+export const EVENT_SHOTGUN_FIRE = 1 << 15;
 
 function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
@@ -49,9 +53,11 @@ export function createWorld(random) {
     jumpBuffer: 0,
     crouching: false,
     hidden: false,
+    inCoverZone: false,
+    activeCoverId: -1,
+    hideGraceTimer: 0,
     dashing: false,
     fluttering: false,
-    stamina: PLAYER.staminaMax,
     invulnerable: 0,
     stumbleTimer: 0,
     runPhase: 0,
@@ -62,9 +68,18 @@ export function createWorld(random) {
     gap: FARMER.startGap,
     state: 'chasing', // 'chasing' | 'searching' | 'spotted'
     spottedTimer: 0,
+    spottedPenaltyCooldown: 0,
     searchTimer: 0,
     stridePhase: 0,
     stealthedThisCover: false,
+    shotgun: {
+      phase: 'idle', // 'idle' | 'aim'
+      timer: 0,
+      maxTimer: 1,
+      aimY: SHOTGUN.lowAimY,
+      aimKind: 'low',
+      fireFlash: 0,
+    },
   };
 
   const state = {
@@ -83,11 +98,15 @@ export function createWorld(random) {
     obstacles: [],
     covers: [],
     knives: [],
+    pellets: [],
     corns: [],
+    hearts: [],
     particles: [],
     popups: [],
-    spawnCursorX: 780,
+    spawnCursorX: 920,
     knifeTimer: 1.8,
+    shotgunTimer: 2.2,
+    heartCooldownDist: 170,
     flutterSfxCooldown: 0,
     lastCoverId: -1,
     nextId: 1,
@@ -133,6 +152,18 @@ export function createWorld(random) {
         bobPhase: i * 0.7,
       });
     }
+  }
+
+  function spawnHeartPickup(x, y) {
+    state.hearts.push({
+      id: state.nextId++,
+      x,
+      y,
+      width: 36,
+      height: 36,
+      collected: false,
+      bobPhase: randomRange(random, 0, Math.PI * 2),
+    });
   }
 
   function spawnObstacleSegment(cursorX, distM) {
@@ -300,6 +331,11 @@ export function createWorld(random) {
       }
     }
 
+    if (distM >= state.heartCooldownDist && distM < GOAL_DISTANCE - 70) {
+      spawnHeartPickup(cursorX + widthUsed * 0.55, FIELD.groundY - 122);
+      state.heartCooldownDist = distM + randomRange(random, 210, 290);
+    }
+
     return cursorX + widthUsed + randomRange(random, 75, 165);
   }
 
@@ -307,8 +343,8 @@ export function createWorld(random) {
     const stageId = state.stage.id;
     const leadX = state.scrollSpeed * 0.55;
     const targetX = Math.max(
-      140,
-      Math.min(FIELD.width - 90, player.x + leadX * 0.45 + randomRange(random, -140, 240)),
+      220,
+      Math.min(FIELD.width - 120, player.x + leadX * 0.45 + randomRange(random, -140, 220)),
     );
     state.knives.push({
       id: state.nextId++,
@@ -346,9 +382,11 @@ export function createWorld(random) {
     player.jumpBuffer = 0;
     player.crouching = false;
     player.hidden = false;
+    player.inCoverZone = false;
+    player.activeCoverId = -1;
+    player.hideGraceTimer = 0;
     player.dashing = false;
     player.fluttering = false;
-    player.stamina = PLAYER.staminaMax;
     player.invulnerable = 0;
     player.stumbleTimer = 0;
     player.runPhase = 0;
@@ -357,9 +395,16 @@ export function createWorld(random) {
     farmer.gap = FARMER.startGap;
     farmer.state = 'chasing';
     farmer.spottedTimer = 0;
+    farmer.spottedPenaltyCooldown = 0;
     farmer.searchTimer = 0;
     farmer.stridePhase = 0;
     farmer.stealthedThisCover = false;
+    farmer.shotgun.phase = 'idle';
+    farmer.shotgun.timer = 0;
+    farmer.shotgun.maxTimer = 1;
+    farmer.shotgun.aimY = SHOTGUN.lowAimY;
+    farmer.shotgun.aimKind = 'low';
+    farmer.shotgun.fireFlash = 0;
 
     state.stage = STAGES[0];
     state.stageBannerTimer = 2.0;
@@ -374,11 +419,15 @@ export function createWorld(random) {
     state.obstacles = [];
     state.covers = [];
     state.knives = [];
+    state.pellets = [];
     state.corns = [];
+    state.hearts = [];
     state.particles = [];
     state.popups = [];
-    state.spawnCursorX = 760;
+    state.spawnCursorX = 920;
     state.knifeTimer = 1.6;
+    state.shotgunTimer = 2.2;
+    state.heartCooldownDist = 170;
     state.flutterSfxCooldown = 0;
     state.lastCoverId = -1;
     state.nextId = 1;
@@ -388,11 +437,17 @@ export function createWorld(random) {
 
   function hurtPlayer(events, reasonText) {
     if (player.invulnerable > 0) return events;
+    if (state.lives <= 0) {
+      farmer.gap = 0;
+      spawnFeatherBurst(player.x + player.width / 2, player.y + player.height * 0.45, 13);
+      addPopup('CAUGHT!', player.x + player.width / 2, player.y - 24, '#ff6847', 1.15);
+      return events | EVENT_HIT | EVENT_CAUGHT;
+    }
     state.lives = Math.max(0, state.lives - 1);
     player.invulnerable = PLAYER.invulnerable;
     player.stumbleTimer = PLAYER.stumbleDuration;
     player.dashing = false;
-    farmer.gap = Math.max(0, farmer.gap - FARMER.hitPenalty);
+    farmer.gap = Math.max(FARMER.hitMinGap, farmer.gap - FARMER.hitPenalty);
     farmer.state = 'spotted';
     farmer.spottedTimer = FARMER.spottedDuration;
     spawnFeatherBurst(player.x + player.width / 2, player.y + player.height * 0.45, 11);
@@ -465,30 +520,26 @@ export function createWorld(random) {
 
     if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
     if (player.stumbleTimer > 0) player.stumbleTimer = Math.max(0, player.stumbleTimer - dt);
+    if (farmer.spottedPenaltyCooldown > 0) {
+      farmer.spottedPenaltyCooldown = Math.max(0, farmer.spottedPenaltyCooldown - dt);
+    }
+    if (farmer.shotgun.fireFlash > 0) {
+      farmer.shotgun.fireFlash = Math.max(0, farmer.shotgun.fireFlash - dt);
+    }
 
-    // Determine dash state
-    const canDash =
-      wantsDash &&
-      !wantsCrouch &&
-      player.stumbleTimer === 0 &&
-      (player.dashing ? player.stamina > 0 : player.stamina >= PLAYER.dashMinStamina);
-    player.dashing = canDash;
-    if (player.dashing) {
-      player.stamina = Math.max(0, player.stamina - PLAYER.dashDrain * dt);
-      if (random() < 0.55) {
-        addParticle(
-          player.x - 10,
-          FIELD.groundY - randomRange(random, 4, 18),
-          randomRange(random, -180, -90),
-          randomRange(random, -45, -10),
-          randomRange(random, 5, 10),
-          '#d8b07a',
-          0.35,
-          'dust',
-        );
-      }
-    } else {
-      player.stamina = Math.min(PLAYER.staminaMax, player.stamina + PLAYER.staminaRegen * dt);
+    // Determine dash state (unlimited stamina; risk/reward speed burst)
+    player.dashing = wantsDash && !wantsCrouch && player.stumbleTimer === 0;
+    if (player.dashing && random() < 0.55) {
+      addParticle(
+        player.x - 10,
+        FIELD.groundY - randomRange(random, 4, 18),
+        randomRange(random, -180, -90),
+        randomRange(random, -45, -10),
+        randomRange(random, 5, 10),
+        '#d8b07a',
+        0.35,
+        'dust',
+      );
     }
 
     // Crouch / stand hitbox transition
@@ -561,36 +612,103 @@ export function createWorld(random) {
       }
     }
 
-    // Cover check: crouch inside a cover zone to hide from the farmer
-    let activeCover = null;
+    // Cover check with boundary hysteresis & crouch grace period (prevents S-spam / edge flicker death)
+    let enterCover = null;
     const pCenterX = player.x + player.width / 2;
     for (let i = 0; i < state.covers.length; i += 1) {
       const c = state.covers[i];
-      if (pCenterX >= c.x + 14 && pCenterX <= c.x + c.width - 14) {
-        activeCover = c;
+      if (pCenterX >= c.x + PLAYER.hideEnterMargin && pCenterX <= c.x + c.width - PLAYER.hideEnterMargin) {
+        enterCover = c;
         break;
       }
     }
+    player.inCoverZone = Boolean(enterCover);
 
     const wasHidden = player.hidden;
-    player.hidden = Boolean(activeCover && player.crouching && player.grounded);
+    let activeCover = enterCover;
+    let stoodUpEarly = false;
+
+    if (wasHidden) {
+      if (!player.grounded || player.stumbleTimer > 0) {
+        player.hidden = false;
+        player.activeCoverId = -1;
+        player.hideGraceTimer = 0;
+        stoodUpEarly = true;
+      } else {
+        const heldCover = state.covers.find((c) => c.id === player.activeCoverId) || null;
+        const stillInsideHeld =
+          heldCover !== null &&
+          pCenterX >= heldCover.x + PLAYER.hideExitMargin &&
+          pCenterX <= heldCover.x + heldCover.width - PLAYER.hideExitMargin;
+
+        if (stillInsideHeld) {
+          activeCover = heldCover;
+          if (player.crouching) {
+            player.hideGraceTimer = PLAYER.hideGraceDuration;
+            player.hidden = true;
+          } else {
+            player.hideGraceTimer -= dt;
+            if (player.hideGraceTimer > 0) {
+              player.hidden = true;
+            } else {
+              player.hidden = false;
+              player.activeCoverId = -1;
+              player.hideGraceTimer = 0;
+              stoodUpEarly = true;
+            }
+          }
+        } else if (enterCover && player.crouching) {
+          activeCover = enterCover;
+          player.activeCoverId = enterCover.id;
+          player.hideGraceTimer = PLAYER.hideGraceDuration;
+          player.hidden = true;
+        } else {
+          player.hideGraceTimer -= dt;
+          if (player.hideGraceTimer > 0 && heldCover) {
+            player.hidden = true;
+            activeCover = heldCover;
+          } else {
+            player.hidden = false;
+            player.activeCoverId = -1;
+            player.hideGraceTimer = 0;
+            // Only penalize if player exited early inside a zone rather than the cover scrolling away
+            stoodUpEarly = Boolean(enterCover);
+          }
+        }
+      }
+    } else if (enterCover && player.crouching && player.grounded && player.stumbleTimer === 0) {
+      player.hidden = true;
+      player.activeCoverId = enterCover.id;
+      player.hideGraceTimer = PLAYER.hideGraceDuration;
+    }
 
     if (player.hidden && !wasHidden) {
       events |= EVENT_HIDE;
       farmer.state = 'searching';
       farmer.searchTimer = 0;
-      if (activeCover.id !== state.lastCoverId) {
+      if (farmer.shotgun.phase === 'aim') {
+        farmer.shotgun.phase = 'idle';
+        farmer.shotgun.timer = 0;
+      }
+      if (activeCover && activeCover.id !== state.lastCoverId) {
         state.lastCoverId = activeCover.id;
         farmer.stealthedThisCover = false;
         state.hideCount += 1;
       }
       addPopup('HIDDEN!', player.x + player.width / 2, player.y - 24, '#92e372', 1.0);
     } else if (!player.hidden && wasHidden) {
-      farmer.state = 'spotted';
-      farmer.spottedTimer = FARMER.spottedDuration;
-      farmer.gap = Math.max(0, farmer.gap - FARMER.spottedPenalty);
-      events |= EVENT_SPOTTED;
-      addPopup('SPOTTED!', player.x + player.width / 2, player.y - 26, '#ff6847', 1.15);
+      if (stoodUpEarly) {
+        farmer.state = 'spotted';
+        farmer.spottedTimer = FARMER.spottedDuration;
+        if (farmer.spottedPenaltyCooldown === 0) {
+          farmer.gap = Math.max(1, farmer.gap - FARMER.spottedPenalty);
+          farmer.spottedPenaltyCooldown = FARMER.spottedPenaltyCooldown;
+          events |= EVENT_SPOTTED;
+          addPopup('SPOTTED!', player.x + player.width / 2, player.y - 26, '#ff6847', 1.15);
+        }
+      } else {
+        farmer.state = 'chasing';
+      }
     }
 
     // World scroll speed depends on stage, dash, stumble, and stealth
@@ -624,6 +742,26 @@ export function createWorld(random) {
       farmer.state = 'searching';
       farmer.searchTimer += dt;
       farmer.gap = Math.min(FARMER.maxGap, farmer.gap + FARMER.hideGain * dt);
+      if (activeCover && random() < dt * 3.5) {
+        const rustleColor =
+          activeCover.kind === COVER_CORN_PATCH
+            ? '#88a836'
+            : activeCover.kind === COVER_FLOUR_SACK
+              ? '#f7efe1'
+              : activeCover.kind === COVER_BARREL
+                ? '#c78c52'
+                : '#f5d26b';
+        addParticle(
+          player.x + player.width * 0.5 + randomRange(random, -28, 28),
+          FIELD.groundY - randomRange(random, 26, 68),
+          randomRange(random, -45, 45),
+          randomRange(random, -85, -35),
+          randomRange(random, 4, 7),
+          rustleColor,
+          0.42,
+          activeCover.kind === COVER_FLOUR_SACK ? 'dust' : 'leaf',
+        );
+      }
       if (!farmer.stealthedThisCover && farmer.searchTimer >= 0.75) {
         farmer.stealthedThisCover = true;
         state.score += SCORING.stealthBonus;
@@ -735,12 +873,12 @@ export function createWorld(random) {
       }
     }
 
-    // Spawn and update falling carving knives in Stage 2 and Stage 3
-    if (state.stage.id >= 2 && state.distance < GOAL_DISTANCE - 25) {
+    // Spawn and update falling carving knives in Stage 3 (Kitchen Chaos) only
+    if (state.stage.id >= 3 && state.distance < GOAL_DISTANCE - 25) {
       state.knifeTimer -= dt;
       if (state.knifeTimer <= 0) {
         spawnFallingKnife();
-        state.knifeTimer = state.stage.id === 3 ? randomRange(random, 1.15, 1.9) : randomRange(random, 1.75, 2.65);
+        state.knifeTimer = randomRange(random, 1.3, 2.1);
       }
     }
 
@@ -796,6 +934,115 @@ export function createWorld(random) {
       }
     }
 
+    // Farmer telegraphed horizontal shotgun attack from Stage 2 onward
+    if (state.stage.id >= 2 && state.distance < GOAL_DISTANCE - 35) {
+      if (farmer.shotgun.phase === 'idle') {
+        if (!player.hidden) {
+          state.shotgunTimer -= dt;
+          if (state.shotgunTimer <= 0) {
+            const nearbyObstacle = state.obstacles.some(
+              (obs) => obs.x > player.x - 40 && obs.x < player.x + 260,
+            );
+            const aimKind = nearbyObstacle ? 'low' : random() < 0.5 ? 'low' : 'high';
+            const aimDur = state.stage.id >= 3 ? SHOTGUN.aimDurationStage3 : SHOTGUN.aimDurationStage2;
+            farmer.shotgun.phase = 'aim';
+            farmer.shotgun.timer = aimDur;
+            farmer.shotgun.maxTimer = aimDur;
+            farmer.shotgun.aimKind = aimKind;
+            farmer.shotgun.aimY = aimKind === 'low' ? SHOTGUN.lowAimY : SHOTGUN.highAimY;
+            events |= EVENT_SHOTGUN_AIM;
+          }
+        }
+      } else if (farmer.shotgun.phase === 'aim') {
+        if (player.hidden) {
+          farmer.shotgun.phase = 'idle';
+          farmer.shotgun.timer = 0;
+          state.shotgunTimer = 1.4;
+        } else {
+          farmer.shotgun.timer -= dt;
+          if (farmer.shotgun.timer <= 0) {
+            const farmerDrawX = Math.max(58, 168 - (farmer.gap / FARMER.visibleGap) * 220);
+            const muzzleX = farmerDrawX + 94;
+            const aimY = farmer.shotgun.aimY;
+            const volley = { hit: false, nearMissed: false };
+            const offsets = [-5, 0, 5];
+            for (let i = 0; i < offsets.length; i += 1) {
+              state.pellets.push({
+                id: state.nextId++,
+                x: muzzleX,
+                y: aimY + offsets[i],
+                vx: SHOTGUN.pelletSpeed,
+                vy: offsets[i] * 2.2,
+                r: SHOTGUN.pelletRadius,
+                volley,
+              });
+            }
+            for (let i = 0; i < 6; i += 1) {
+              addParticle(
+                muzzleX,
+                aimY,
+                randomRange(random, 80, 220),
+                randomRange(random, -60, 60),
+                randomRange(random, 5, 10),
+                randomPick(random, ['#ffe066', '#ffa126', '#d9d4ce']),
+                0.28,
+                'dust',
+              );
+            }
+            farmer.shotgun.phase = 'idle';
+            farmer.shotgun.fireFlash = 0.22;
+            state.shotgunTimer =
+              state.stage.id >= 3
+                ? randomRange(random, SHOTGUN.stage3Interval[0], SHOTGUN.stage3Interval[1])
+                : randomRange(random, SHOTGUN.stage2Interval[0], SHOTGUN.stage2Interval[1]);
+            events |= EVENT_SHOTGUN_FIRE;
+          }
+        }
+      }
+    } else if (farmer.shotgun.phase === 'aim') {
+      farmer.shotgun.phase = 'idle';
+      farmer.shotgun.timer = 0;
+    }
+
+    // Update shotgun pellets
+    for (let i = state.pellets.length - 1; i >= 0; i -= 1) {
+      const pel = state.pellets[i];
+      pel.x += pel.vx * dt;
+      pel.y += pel.vy * dt;
+      if (pel.x > FIELD.width + 60) {
+        state.pellets.splice(i, 1);
+        continue;
+      }
+      if (
+        !pel.volley.hit &&
+        rectsOverlap(
+          player.x + 10,
+          player.y + 8,
+          player.width - 20,
+          player.height - 12,
+          pel.x - pel.r,
+          pel.y - pel.r,
+          pel.r * 2,
+          pel.r * 2,
+        )
+      ) {
+        pel.volley.hit = true;
+        events = hurtPlayer(events, 'PEPPERED!');
+        state.pellets.splice(i, 1);
+        continue;
+      }
+      if (!pel.volley.hit && !pel.volley.nearMissed && pel.x >= player.x + player.width / 2) {
+        const pyCenter = player.y + player.height / 2;
+        if (Math.abs(pel.y - pyCenter) <= 78) {
+          pel.volley.nearMissed = true;
+          state.score += SCORING.nearMissPoints;
+          state.nearMissCount += 1;
+          events |= EVENT_NEAR_MISS;
+          addPopup(`NEAR MISS +${SCORING.nearMissPoints}`, player.x + player.width / 2, player.y - 26, '#ffd45c', 1.05);
+        }
+      }
+    }
+
     // Scroll and collect corn cobs
     for (let i = state.corns.length - 1; i >= 0; i -= 1) {
       const c = state.corns[i];
@@ -812,7 +1059,6 @@ export function createWorld(random) {
         c.collected = true;
         state.score += SCORING.cornPoints;
         state.cornCount += 1;
-        player.stamina = Math.min(PLAYER.staminaMax, player.stamina + SCORING.cornStamina);
         events |= EVENT_CORN;
         addPopup(`+${SCORING.cornPoints}`, c.x + c.width / 2, c.y - 10, '#f5cb42', 0.95);
         for (let j = 0; j < 6; j += 1) {
@@ -831,15 +1077,92 @@ export function createWorld(random) {
       }
     }
 
+    // Scroll and collect heart pickups
+    for (let i = state.hearts.length - 1; i >= 0; i -= 1) {
+      const h = state.hearts[i];
+      h.x -= speed * dt;
+      h.bobPhase += dt * 4.2;
+      if (h.x + h.width < -80) {
+        state.hearts.splice(i, 1);
+        continue;
+      }
+      if (
+        !h.collected &&
+        rectsOverlap(player.x - 4, player.y - 4, player.width + 8, player.height + 8, h.x, h.y, h.width, h.height)
+      ) {
+        h.collected = true;
+        events |= EVENT_HEART;
+        if (state.lives < LIVES) {
+          state.lives += 1;
+          addPopup('HEART +1', h.x + h.width / 2, h.y - 12, '#ff6b81', 1.08);
+        } else {
+          state.score += SCORING.heartFullBonus;
+          farmer.gap = Math.min(FARMER.maxGap, farmer.gap + SCORING.heartFullGauge);
+          addPopup(`FULL +${SCORING.heartFullBonus}`, h.x + h.width / 2, h.y - 12, '#ffd45c', 1.05);
+        }
+        for (let j = 0; j < 7; j += 1) {
+          addParticle(
+            h.x + h.width / 2,
+            h.y + h.height / 2,
+            randomRange(random, -100, 100),
+            randomRange(random, -140, 10),
+            randomRange(random, 4, 7),
+            '#ff7a8a',
+            0.45,
+            'spark',
+          );
+        }
+        state.hearts.splice(i, 1);
+      }
+    }
+
     state.spawnCursorX -= speed * dt;
     populateAhead();
     updateParticlesAndPopups(dt);
 
-    // Check win/loss termination
-    if (state.lives <= 0 || farmer.gap <= 0) {
-      farmer.gap = 0;
-      events |= EVENT_CAUGHT;
-    } else if (state.distance >= GOAL_DISTANCE) {
+    // Check DANGER 100% (gap <= 0) recharge (spend 1 life & reset position) or win/loss termination
+    if (!(events & EVENT_CAUGHT) && farmer.gap <= 0) {
+      if (state.lives > 0) {
+        state.lives -= 1;
+        farmer.gap = FARMER.rechargeGap;
+        farmer.state = 'chasing';
+        farmer.spottedTimer = 0;
+        farmer.searchTimer = 0;
+        farmer.shotgun.phase = 'idle';
+        farmer.shotgun.timer = 0;
+        state.pellets = [];
+
+        player.x = PLAYER.homeX;
+        player.y = FIELD.groundY - PLAYER.standHeight;
+        player.vy = 0;
+        player.width = PLAYER.standWidth;
+        player.height = PLAYER.standHeight;
+        player.grounded = true;
+        player.crouching = false;
+        player.hidden = false;
+        player.activeCoverId = -1;
+        player.hideGraceTimer = 0;
+        player.dashing = false;
+        player.fluttering = false;
+        player.stumbleTimer = 0;
+        player.invulnerable = 2.0;
+
+        spawnFeatherBurst(player.x + player.width / 2, player.y + player.height * 0.5, 14);
+        addPopup(
+          state.lives === 0 ? 'LAST CHANCE! -1 LIFE' : 'BROKE FREE! -1 LIFE',
+          player.x + player.width / 2,
+          player.y - 32,
+          '#ffd45c',
+          1.15,
+        );
+        events |= EVENT_RECHARGE;
+      } else {
+        farmer.gap = 0;
+        events |= EVENT_CAUGHT;
+      }
+    }
+
+    if (!(events & EVENT_CAUGHT) && state.distance >= GOAL_DISTANCE) {
       state.distance = GOAL_DISTANCE;
       state.score += SCORING.escapeBonus + state.lives * SCORING.lifeBonus;
       events |= EVENT_ESCAPED;

@@ -206,6 +206,31 @@ export function createAudio() {
     }, 340);
   }
 
+  function playHeart() {
+    const notes = [523, 659, 784, 1046];
+    notes.forEach((n, idx) => {
+      tone({ type: 'sine', freqStart: n, freqEnd: n * 1.03, duration: 0.11, gain: 0.19, delay: idx * 0.05 });
+    });
+  }
+
+  function playRecharge() {
+    tone({ type: 'triangle', freqStart: 220, freqEnd: 660, duration: 0.28, gain: 0.24 });
+    tone({ type: 'sine', freqStart: 523, freqEnd: 784, duration: 0.22, gain: 0.18, delay: 0.12 });
+    noiseBurst({ duration: 0.18, filterFreq: 1600, filterType: 'bandpass', gain: 0.1 });
+  }
+
+  function playShotgunAim() {
+    noiseBurst({ duration: 0.05, filterFreq: 2200, filterType: 'bandpass', gain: 0.12 });
+    tone({ type: 'triangle', freqStart: 420, freqEnd: 520, duration: 0.06, gain: 0.12, delay: 0.06 });
+    noiseBurst({ duration: 0.05, filterFreq: 2600, filterType: 'bandpass', gain: 0.14, delay: 0.09 });
+  }
+
+  function playShotgunFire() {
+    tone({ type: 'sawtooth', freqStart: 165, freqEnd: 46, duration: 0.24, gain: 0.34 });
+    noiseBurst({ duration: 0.28, filterFreq: 950, filterType: 'bandpass', gain: 0.32 });
+    noiseBurst({ duration: 0.16, filterFreq: 2200, filterType: 'highpass', gain: 0.16, delay: 0.02 });
+  }
+
   return {
     unlock,
     setMuted,
@@ -224,5 +249,9 @@ export function createAudio() {
     playStageClear,
     playCaught,
     playEscape,
+    playHeart,
+    playRecharge,
+    playShotgunAim,
+    playShotgunFire,
   };
 }

@@ -1,10 +1,12 @@
-// Deterministic screenshot staging for ?shot=start|farm|kitchen|end (and caught) with &seed=N.
+// Deterministic screenshot staging for ?shot=start|farm|kitchen|end (and cornfield/caught) with &seed=N.
 // Stages real world entities and advances real fixed simulation steps so every screenshot reads
 // clearly at a glance and reproduces identically on every run.
-import { FIELD, PLAYER, STAGES, STEP } from './config.js';
+import { FIELD, PLAYER, SHOTGUN, STAGES, STEP } from './config.js';
 import { SCREEN_CAUGHT, SCREEN_ESCAPED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 import {
+  COVER_CORN_PATCH,
   COVER_HAYSTACK,
+  OBS_BARREL,
   OBS_COUNTER,
   OBS_FENCE,
   OBS_OVEN,
@@ -17,22 +19,21 @@ export function stageShot(name, world) {
   const p = s.player;
 
   if (name === 'farm') {
-    // Stage 1: Farmyard Dawn — farmer chasing close behind, turkey mid-leap over fence, haystack ahead
+    // Stage 1: Farmyard Dawn — aproned farmer with shotgun chasing, turkey leaping white/red fence, heart & haystack ahead
     s.stage = STAGES[0];
     s.stageBannerTimer = 0;
     s.distance = 168;
     s.score = 145;
     s.cornCount = 9;
     s.lives = 3;
-    s.farmer.gap = 24;
+    s.farmer.gap = 30;
     s.farmer.state = 'chasing';
     s.farmer.stridePhase = 1.1;
 
     p.x = 435;
-    p.y = FIELD.groundY - PLAYER.standHeight - 115;
+    p.y = FIELD.groundY - PLAYER.standHeight - 110;
     p.vy = -120;
     p.grounded = false;
-    p.stamina = 76;
     p.runPhase = 2.4;
 
     s.obstacles = [
@@ -60,9 +61,12 @@ export function stageShot(name, world) {
     s.corns = [
       { id: 3, x: 525, y: FIELD.groundY - 210, width: 30, height: 44, collected: false, bobPhase: 0.4 },
       { id: 4, x: 585, y: FIELD.groundY - 190, width: 30, height: 44, collected: false, bobPhase: 1.1 },
-      { id: 5, x: 740, y: FIELD.groundY - 122, width: 30, height: 44, collected: false, bobPhase: 1.8 },
+    ];
+    s.hearts = [
+      { id: 6, x: 742, y: FIELD.groundY - 126, width: 36, height: 36, collected: false, bobPhase: 0.8 },
     ];
     s.knives = [];
+    s.pellets = [];
     s.particles = [
       { x: 405, y: FIELD.groundY - 14, vx: 0, vy: 0, size: 7, color: '#d9b589', life: 0.3, maxLife: 0.4, kind: 'dust' },
       { x: 428, y: FIELD.groundY - 22, vx: 0, vy: 0, size: 6, color: '#d9b589', life: 0.3, maxLife: 0.4, kind: 'dust' },
@@ -73,8 +77,91 @@ export function stageShot(name, world) {
     return { screen: SCREEN_PLAY, best: 320 };
   }
 
+  if (name === 'hide') {
+    // Verification scene: turkey hiding inside fluffy haystack with peeking eyes while farmer searches
+    s.stage = STAGES[0];
+    s.stageBannerTimer = 0;
+    s.distance = 225;
+    s.score = 190;
+    s.cornCount = 11;
+    s.lives = 3;
+    s.farmer.gap = 52;
+    s.farmer.state = 'searching';
+    s.farmer.searchTimer = 0.6;
+    s.farmer.stridePhase = 0.4;
+
+    p.x = 510;
+    p.y = FIELD.groundY - PLAYER.crouchHeight;
+    p.width = PLAYER.crouchWidth;
+    p.height = PLAYER.crouchHeight;
+    p.grounded = true;
+    p.crouching = true;
+    p.hidden = true;
+    p.inCoverZone = true;
+    p.activeCoverId = 2;
+    p.runPhase = 0;
+
+    s.obstacles = [
+      { id: 1, kind: OBS_FENCE, x: 960, y: FIELD.groundY - 78, width: 56, height: 78, hit: false, nearMissed: false },
+    ];
+    s.covers = [
+      { id: 2, kind: COVER_HAYSTACK, x: 470, y: FIELD.groundY - 118, width: 164, height: 118 },
+    ];
+    s.corns = [
+      { id: 3, x: 740, y: FIELD.groundY - 82, width: 30, height: 44, collected: false, bobPhase: 0.6 },
+    ];
+    s.hearts = [];
+    s.knives = [];
+    s.pellets = [];
+    s.particles = [];
+    s.popups = [];
+    s.elapsed = 2.1;
+    return { screen: SCREEN_PLAY, best: 320 };
+  }
+
+  if (name === 'cornfield') {
+    // Stage 2: Cornfield Road — no falling knives, farmer telegraphing low shotgun shot (JUMP!), corn patch & blue barrel
+    s.stage = STAGES[1];
+    s.stageBannerTimer = 0;
+    s.distance = 560;
+    s.score = 310;
+    s.cornCount = 17;
+    s.lives = 2;
+    s.farmer.gap = 42;
+    s.farmer.state = 'chasing';
+    s.farmer.stridePhase = 0.8;
+    s.farmer.shotgun = {
+      phase: 'aim',
+      timer: 0.45,
+      maxTimer: SHOTGUN.aimDurationStage2,
+      aimY: SHOTGUN.lowAimY,
+      aimKind: 'low',
+      fireFlash: 0,
+    };
+
+    p.x = 460;
+    p.y = FIELD.groundY - PLAYER.standHeight - 92;
+    p.grounded = false;
+    p.runPhase = 1.9;
+
+    s.covers = [
+      { id: 50, kind: COVER_CORN_PATCH, x: 740, y: FIELD.groundY - 148, width: 176, height: 148 },
+    ];
+    s.obstacles = [
+      { id: 51, kind: OBS_BARREL, x: 1010, y: FIELD.groundY - 74, width: 70, height: 74, hit: false, nearMissed: false },
+    ];
+    s.knives = [];
+    s.pellets = [];
+    s.corns = [
+      { id: 52, x: 640, y: FIELD.groundY - 145, width: 30, height: 44, collected: false, bobPhase: 0.4 },
+    ];
+    s.hearts = [];
+    s.elapsed = 7.2;
+    return { screen: SCREEN_PLAY, best: 620 };
+  }
+
   if (name === 'kitchen') {
-    // Stage 3: Kitchen Chaos — oven blasting flame, telegraphing oven, falling knife, counter, SPOTTED!
+    // Stage 3: Kitchen Chaos — low-contrast tile wall, shotgun telegraph, teal counter, oven blast & warn, falling knife
     s.stage = STAGES[2];
     s.stageBannerTimer = 0;
     s.distance = 1035;
@@ -82,16 +169,26 @@ export function stageShot(name, world) {
     s.cornCount = 24;
     s.nearMissCount = 5;
     s.lives = 2;
-    s.farmer.gap = 22;
+    s.farmer.gap = 26;
     s.farmer.state = 'spotted';
     s.farmer.spottedTimer = 1.0;
     s.farmer.stridePhase = 0.7;
+    s.farmer.shotgun = {
+      phase: 'aim',
+      timer: 0.42,
+      maxTimer: SHOTGUN.aimDurationStage3,
+      aimY: SHOTGUN.highAimY,
+      aimKind: 'high',
+      fireFlash: 0,
+    };
 
-    p.x = 420;
-    p.y = FIELD.groundY - PLAYER.standHeight;
+    p.x = 415;
+    p.y = FIELD.groundY - PLAYER.crouchHeight;
+    p.width = PLAYER.crouchWidth;
+    p.height = PLAYER.crouchHeight;
     p.grounded = true;
-    p.dashing = true;
-    p.stamina = 62;
+    p.crouching = true;
+    p.dashing = false;
     p.runPhase = 1.6;
 
     s.covers = [];
@@ -99,7 +196,7 @@ export function stageShot(name, world) {
       {
         id: 10,
         kind: OBS_OVEN,
-        x: 610,
+        x: 615,
         y: FIELD.groundY - 128,
         width: 118,
         height: 128,
@@ -159,9 +256,11 @@ export function stageShot(name, world) {
         nearMissed: false,
       },
     ];
+    s.pellets = [];
     s.corns = [
       { id: 30, x: 902, y: FIELD.groundY - 160, width: 30, height: 44, collected: false, bobPhase: 0.2 },
     ];
+    s.hearts = [];
     s.popups = [
       { text: 'NEAR MISS +5', x: 356, y: 392, vy: -20, life: 0.85, maxLife: 1.15, color: '#ffd45c', scale: 1.1 },
     ];
@@ -197,7 +296,7 @@ export function stageShot(name, world) {
     return { screen: SCREEN_CAUGHT, best: 620 };
   }
 
-  // Default: 'start' title cover composition — vibrant Farmyard Dawn with big running turkey & chasing farmer
+  // Default: 'start' title cover composition — vibrant Farmyard Dawn with big running turkey & aproned shotgun farmer
   for (let i = 0; i < 45; i += 1) {
     world.step(STEP, { direction: 0 }, true);
   }
@@ -206,6 +305,8 @@ export function stageShot(name, world) {
   p.facing = 1;
   s.covers = [];
   s.obstacles = [];
+  s.hearts = [];
+  s.pellets = [];
   s.corns = [
     { id: 40, x: 955, y: FIELD.groundY - 115, width: 30, height: 44, collected: false, bobPhase: 0.3 },
     { id: 41, x: 1025, y: FIELD.groundY - 145, width: 30, height: 44, collected: false, bobPhase: 1.0 },
@@ -214,6 +315,10 @@ export function stageShot(name, world) {
     { x: 540, y: FIELD.groundY - 125, vx: 0, vy: 0, size: 10, color: '#e28426', life: 0.8, maxLife: 1.0, kind: 'feather' },
     { x: 585, y: FIELD.groundY - 95, vx: 0, vy: 0, size: 9, color: '#b8421b', life: 0.8, maxLife: 1.0, kind: 'feather' },
     { x: 495, y: FIELD.groundY - 150, vx: 0, vy: 0, size: 8, color: '#f2be4b', life: 0.8, maxLife: 1.0, kind: 'feather' },
+    { x: 640, y: FIELD.groundY - 165, vx: 0, vy: 0, size: 9, color: '#d94e28', life: 0.85, maxLife: 1.0, kind: 'leaf' },
+    { x: 1090, y: FIELD.groundY - 210, vx: 0, vy: 0, size: 10, color: '#f2c249', life: 0.85, maxLife: 1.0, kind: 'leaf' },
+    { x: 705, y: FIELD.groundY - 12, vx: 0, vy: 0, size: 9, color: '#d9b589', life: 0.55, maxLife: 1.0, kind: 'dust' },
+    { x: 675, y: FIELD.groundY - 20, vx: 0, vy: 0, size: 7, color: '#d9b589', life: 0.45, maxLife: 1.0, kind: 'dust' },
   ];
   return { screen: SCREEN_TITLE, best: 620 };
 }

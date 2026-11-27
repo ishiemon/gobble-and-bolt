@@ -25,12 +25,16 @@ import {
   EVENT_CORN,
   EVENT_ESCAPED,
   EVENT_FLUTTER,
+  EVENT_HEART,
   EVENT_HIDE,
   EVENT_HIT,
   EVENT_JUMP,
   EVENT_NEAR_MISS,
   EVENT_OVEN_BLAST,
   EVENT_OVEN_WARN,
+  EVENT_RECHARGE,
+  EVENT_SHOTGUN_AIM,
+  EVENT_SHOTGUN_FIRE,
   EVENT_SPOTTED,
   EVENT_STAGE_UP,
 } from './world.js';
@@ -118,11 +122,21 @@ function runGame() {
     if (events & EVENT_JUMP) audio.playJump();
     if (events & EVENT_FLUTTER) audio.playFlutter();
     if (events & EVENT_CORN) audio.playCorn();
+    if (events & EVENT_HEART) {
+      audio.playHeart();
+      announce(`Heart recovered! ${world.state.lives} lives left.`);
+    }
     if (events & EVENT_NEAR_MISS) audio.playNearMiss();
     if (events & EVENT_HIDE) audio.playHide();
     if (events & EVENT_SPOTTED) audio.playSpotted();
     if (events & EVENT_OVEN_WARN) audio.playOvenWarn();
     if (events & EVENT_OVEN_BLAST) audio.playOvenBlast();
+    if (events & EVENT_SHOTGUN_AIM) audio.playShotgunAim();
+    if (events & EVENT_SHOTGUN_FIRE) audio.playShotgunFire();
+    if (events & EVENT_RECHARGE) {
+      audio.playRecharge();
+      announce(`Broke free! Danger reset. ${world.state.lives} lives left.`);
+    }
     if (events & EVENT_STAGE_UP) {
       audio.playStageClear();
       announce(`Stage ${world.state.stage.id}: ${world.state.stage.name}.`);
